@@ -28,6 +28,7 @@ func buildkafkaRunner() KafkaRunner {
 	}
 	brokers := []string{broker + ":9092"}
 	fmt.Println("brokers %v", brokers)
+
 	topics := []string{}
 	if val, exists := os.LookupEnv("topics"); exists {
 		for _, topic := range strings.Split(val, ",") {
@@ -100,9 +101,7 @@ func waitForBrokers(f *KafkaRunner) {
 	var client sarama.Client
 	var err error
 
-	fmt.Println("kafka start listen %s", f.Topics)
-
-	//brokers := []string{f.Broker + "9092"}
+	//brokers := []string{f.Broker + ":9092"}
 
 	for {
 		client, err = sarama.NewClient(f.Brokers, nil)
@@ -160,6 +159,7 @@ func makeConsumer(f *KafkaRunner) {
 
 		case <-signals:
 			fmt.Printf("exit:\n")
+			break
 		}
 	}
 }

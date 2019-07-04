@@ -105,7 +105,7 @@ func (f *HTTPFunctionRunner) Run(req FunctionRequest, contentLength int64, r *ht
 
 	upstreamURL := f.UpstreamURL.String()
 
-	fmt.Println("time %v", startedTime)
+	fmt.Println("@@@@@@@@@@@@@@@@@@@22http run time %v", startedTime)
 
 	if len(r.RequestURI) > 0 {
 		upstreamURL += r.RequestURI
