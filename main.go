@@ -65,10 +65,12 @@ func main() {
 		MaxHeaderBytes: 1 << 20, // Max header of 1MB
 	}
 
+	fmt.Println("haha start kafka")
+	go executor.KafkaRun()
+
+	fmt.Println("start listen")
 	listenUntilShutdown(shutdownTimeout, s, watchdogConfig.SuppressLock)
 
-	fmt.Println("haha start kafka")
-	executor.KafkaRun()
 }
 
 func markUnhealthy() error {
