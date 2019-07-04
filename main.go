@@ -34,13 +34,16 @@ func main() {
 		os.Exit(-1)
 	}
 
+	fmt.Println("1111")
 	if len(watchdogConfig.FunctionProcess) == 0 {
 		fmt.Fprintf(os.Stderr, "Provide a \"function_process\" or \"fprocess\" environmental variable for your function.\n")
 		os.Exit(-1)
 	}
 
+	fmt.Println("122111")
 	requestHandler := buildRequestHandler(watchdogConfig)
 
+	fmt.Println("111x331")
 	log.Printf("OperationalMode: %s\n", config.WatchdogMode(watchdogConfig.OperationalMode))
 
 	httpMetrics := metrics.NewHttp()
@@ -51,7 +54,7 @@ func main() {
 	metricsServer.Register(watchdogConfig.MetricsPort)
 
 	cancel := make(chan bool)
-
+	fmt.Println("aljdlajdlfjaldfa process")
 	go metricsServer.Serve(cancel)
 
 	shutdownTimeout := watchdogConfig.HTTPWriteTimeout
@@ -63,6 +66,9 @@ func main() {
 	}
 
 	listenUntilShutdown(shutdownTimeout, s, watchdogConfig.SuppressLock)
+
+	fmt.Println("haha start kafka")
+	executor.KafkaRun()
 }
 
 func markUnhealthy() error {
@@ -236,7 +242,6 @@ func makeForkRequestHandler(watchdogConfig config.WatchdogConfig) func(http.Resp
 	functionInvoker := executor.ForkFunctionRunner{
 		ExecTimeout: watchdogConfig.ExecTimeout,
 	}
-
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		var environment []string
@@ -296,6 +301,8 @@ func makeHTTPRequestHandler(watchdogConfig config.WatchdogConfig) func(http.Resp
 		BufferHTTPBody: watchdogConfig.BufferHTTPBody,
 	}
 
+	fmt.Println("make http request handler")
+
 	if len(watchdogConfig.UpstreamURL) == 0 {
 		log.Fatal(`For mode=http you must specify a valid URL for "upstream_url"`)
 	}
@@ -322,6 +329,7 @@ func makeHTTPRequestHandler(watchdogConfig config.WatchdogConfig) func(http.Resp
 			defer r.Body.Close()
 		}
 
+		fmt.Println("run~~~~~~~~~~")
 		err := functionInvoker.Run(req, r.ContentLength, r, w)
 
 		if err != nil {
