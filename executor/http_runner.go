@@ -110,7 +110,7 @@ func (f *HTTPFunctionRunner) Run(req FunctionRequest, contentLength int64, r *ht
 	if len(r.RequestURI) > 0 {
 		upstreamURL += r.RequestURI
 	}
-
+	fmt.Println("@@@ url %s", upstreamURL)
 	var body io.Reader
 	if f.BufferHTTPBody {
 		reqBody, _ := ioutil.ReadAll(r.Body)

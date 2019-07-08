@@ -1,7 +1,10 @@
 package executor
 
 import (
+	"bytes"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -12,8 +15,9 @@ import (
 
 // HTTPFunctionRunner creates and maintains one process responsible for handling all calls
 type KafkaRunner struct {
-	Topics  []string
-	Brokers []string
+	UpstreamURL string
+	Topics      []string
+	Brokers     []string
 }
 
 func KafkaRun() {
@@ -41,6 +45,11 @@ func buildkafkaRunner() KafkaRunner {
 		fmt.Println(`Provide a list of topics i.e. topics="payment_published,slack_joined"`)
 	}
 
+	var upstreamURL string
+	if val, exists := os.LookupEnv("upstream_url"); exists {
+		upstreamURL = val
+	}
+	fmt.Println("upstreamURL:  %v", upstreamURL)
 	//	gatewayURL := "http://gateway:8080"
 	//	if val, exists := os.LookupEnv("gateway_url"); exists {
 	//		gatewayURL = val
@@ -81,8 +90,9 @@ func buildkafkaRunner() KafkaRunner {
 	//	}
 
 	return KafkaRunner{
-		Topics:  topics,
-		Brokers: brokers,
+		UpstreamURL: upstreamURL,
+		Topics:      topics,
+		Brokers:     brokers,
 	}
 }
 
@@ -153,6 +163,7 @@ func makeConsumer(f *KafkaRunner) {
 				string(msg.Value))
 			consumed++
 			//	controller.Invoke(msg.Topic, &msg.Value)
+			trigger(f, &msg.Value)
 
 		case err = <-partitionConsumer.Errors():
 			fmt.Println("consumer error: ", err)
@@ -162,4 +173,20 @@ func makeConsumer(f *KafkaRunner) {
 			break
 		}
 	}
+}
+
+func trigger(f *KafkaRunner, b *[]byte) {
+	fmt.Println("url %v, byte %v", f.UpstreamURL, *b)
+	resp, err := http.Post(f.UpstreamURL, "text/plain", bytes.NewReader(*b))
+	if err != nil {
+		fmt.Println("http post err", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		fmt.Println("io read error")
+	}
+
+	fmt.Println(string(body))
 }
