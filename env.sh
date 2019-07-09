@@ -1,0 +1,6 @@
+export  fprocess="python3 index.py"
+export  cgi_headers="true"
+export  mode="http"
+export  upstream_url="http://127.0.0.1:5000"
+export  broker_host="127.0.0.1"
+export  topics="test"
