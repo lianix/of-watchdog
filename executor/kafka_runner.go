@@ -37,6 +37,7 @@ func KafkaRun() {
 		fmt.Println("Failed to create client")
 	}
 
+	listenKafka(k)
 }
 
 func buildkafkaRunnerCfg() *KafkaRunnerCfg {
@@ -58,6 +59,7 @@ func buildkafkaRunnerCfg() *KafkaRunnerCfg {
 	if len(topics) == 0 {
 		fmt.Println("please provide topics")
 	}
+	fmt.Println("topics %v", topics)
 
 	var upstreamURL string
 	if val, exists := os.LookupEnv("upstream_url"); exists {
@@ -139,8 +141,6 @@ func makeKafkaClient(k *KafkaRunner) error {
 	}
 
 	// setup consumer
-	fmt.Println("Binding to topics: %v", k.Cfg.Topics)
-
 	k.Consumer, err = sarama.NewConsumer(k.Cfg.Brokers, nil)
 	if err != nil {
 		fmt.Println("could not create consumer: ", err)
@@ -164,14 +164,17 @@ func makeKafkaClient(k *KafkaRunner) error {
 	return nil
 }
 
-func subscribe(k *KafkaRunner) {
+func listenKafka(k *KafkaRunner) {
 	topic := k.Cfg.Topics[0]
 	consumer := k.Consumer
 
+	fmt.Println("Polling topic: %s", topic)
 	partitionList, err := consumer.Partitions(topic) //get all partitions on the given topic
 	if err != nil {
 		fmt.Println("Error retrieving partitionList ", err)
 	}
+
+	fmt.Println("partitionList %v", partitionList)
 
 	initialOffset := sarama.OffsetNewest //OfffsetOldest
 	for _, partition := range partitionList {
@@ -213,17 +216,19 @@ func messageSend(k *KafkaRunner, value []byte) {
 		return
 	}
 
+	topic := k.Cfg.Topics[1]
 	msg := &sarama.ProducerMessage{
-		Topic:     k.Cfg.Topics[1],
+		Topic:     topic,
 		Partition: -1,
 		Value:     sarama.ByteEncoder(value),
 	}
 
 	partition, offset, err := k.Producer.SendMessage(msg)
 	if err != nil {
-		fmt.Println("%s error occured.", err.Error())
+		fmt.Println("Could not send message to Topic %s", topic)
+		fmt.Println("Error: %s", err.Error())
 	} else {
-		fmt.Println("message was sent t partion %d offset is %d",
+		fmt.Println("message was sent to partion %d offset is %d",
 			partition, offset)
 	}
 }
