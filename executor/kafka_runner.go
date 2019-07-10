@@ -2,11 +2,11 @@ package executor
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
 	"time"
 
@@ -14,18 +14,32 @@ import (
 )
 
 // HTTPFunctionRunner creates and maintains one process responsible for handling all calls
-type KafkaRunner struct {
+type KafkaRunnerCfg struct {
 	UpstreamURL string
 	Topics      []string
 	Brokers     []string
 }
 
-func KafkaRun() {
-	f := buildkafkaRunner()
-	f.Start()
+type KafkaRunner struct {
+	Cfg        *KafkaRunnerCfg
+	NoProducer bool
+	Consumer   sarama.Consumer
+	Producer   sarama.SyncProducer
 }
 
-func buildkafkaRunner() KafkaRunner {
+func KafkaRun() {
+	var k *KafkaRunner = new(KafkaRunner)
+
+	k.Cfg = buildkafkaRunnerCfg()
+
+	err := makeKafkaClient(k)
+	if err != nil {
+		fmt.Println("Failed to create client")
+	}
+
+}
+
+func buildkafkaRunnerCfg() *KafkaRunnerCfg {
 	broker := "kafka"
 	if val, exists := os.LookupEnv("broker_host"); exists {
 		broker = val
@@ -42,7 +56,7 @@ func buildkafkaRunner() KafkaRunner {
 		}
 	}
 	if len(topics) == 0 {
-		fmt.Println(`Provide a list of topics i.e. topics="payment_published,slack_joined"`)
+		fmt.Println("please provide topics")
 	}
 
 	var upstreamURL string
@@ -89,95 +103,96 @@ func buildkafkaRunner() KafkaRunner {
 	//		}
 	//	}
 
-	return KafkaRunner{
+	return &KafkaRunnerCfg{
 		UpstreamURL: upstreamURL,
 		Topics:      topics,
 		Brokers:     brokers,
 	}
 }
 
-// Start forks the process used for processing incoming requests
-func (f *KafkaRunner) Start() {
-
-	fmt.Println("kafka start listen %v", f.Topics)
-
-	waitForBrokers(f)
-
-	makeConsumer(f)
-}
-
-// Start forks the process used for processing incoming requests
-func waitForBrokers(f *KafkaRunner) {
-	var client sarama.Client
+// Make Kafka Client/consumer/producer
+func makeKafkaClient(k *KafkaRunner) error {
 	var err error
 
 	//brokers := []string{f.Broker + ":9092"}
-
+	// Wait for Broker ready
 	for {
-		client, err = sarama.NewClient(f.Brokers, nil)
+		client, err := sarama.NewClient(k.Cfg.Brokers, nil)
 		if client != nil && err == nil {
 			break
 		}
 		if client != nil {
 			client.Close()
 		}
-		fmt.Println("wait for brokers (%s) to come up", f.Brokers[0])
+		fmt.Println("wait for brokers (%s) to come up", k.Cfg.Brokers[0])
 
 		time.Sleep(1 * time.Second)
 	}
+
+	len := len(k.Cfg.Topics)
+	if len == 0 {
+		return errors.New("No Topic")
+	} else if len == 1 {
+		k.NoProducer = true
+	} else {
+		k.NoProducer = false
+	}
+
+	// setup consumer
+	fmt.Println("Binding to topics: %v", k.Cfg.Topics)
+
+	k.Consumer, err = sarama.NewConsumer(k.Cfg.Brokers, nil)
+	if err != nil {
+		fmt.Println("could not create consumer: ", err)
+		return err
+	}
+
+	if k.NoProducer {
+		return nil
+	}
+	// setup producer
+	config := sarama.NewConfig()
+	config.Producer.Partitioner = sarama.NewRandomPartitioner
+	config.Producer.RequiredAcks = sarama.WaitForAll
+	config.Producer.Return.Successes = true
+	k.Producer, err = sarama.NewSyncProducer(k.Cfg.Brokers, config)
+	if err != nil {
+		fmt.Println("could not create producer", err)
+		return err
+	}
+
+	return nil
 }
 
-func makeConsumer(f *KafkaRunner) {
-	//setup consumer
-	fmt.Println("Binding to topics: %v", f.Topics)
+func subscribe(k *KafkaRunner) {
+	topic := k.Cfg.Topics[0]
+	consumer := k.Consumer
 
-	consumer, err := sarama.NewConsumer(f.Brokers, nil)
+	partitionList, err := consumer.Partitions(topic) //get all partitions on the given topic
 	if err != nil {
-		fmt.Println("Fail to create Kafka consumer: ", err)
+		fmt.Println("Error retrieving partitionList ", err)
 	}
 
-	defer consumer.Close()
+	initialOffset := sarama.OffsetNewest //OfffsetOldest
+	for _, partition := range partitionList {
+		pc, _ := consumer.ConsumePartition(topic, partition, initialOffset)
 
-	partitionConsumer, err := consumer.ConsumePartition(f.Topics[0], 0, sarama.OffsetNewest)
-	if err != nil {
-		//log.Fatalln("Fail to create partitions")
-	}
-
-	defer func() {
-		if err := partitionConsumer.Close(); err != nil {
-			//log.Fatalln(err)
-		}
-	}()
-
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, os.Interrupt)
-
-	consumed := 0
-	for {
-		select {
-		case msg := <-partitionConsumer.Messages():
-			fmt.Printf("[#%d] Received on [%v,%v]: '%s'\n",
-				msg.Offset,
-				msg.Topic,
-				msg.Partition,
-				string(msg.Value))
-			consumed++
-			//	controller.Invoke(msg.Topic, &msg.Value)
-			trigger(f, &msg.Value)
-
-		case err = <-partitionConsumer.Errors():
-			fmt.Println("consumer error: ", err)
-
-		case <-signals:
-			fmt.Printf("exit:\n")
-			break
-		}
+		go func(pc sarama.PartitionConsumer) {
+			for message := range pc.Messages() {
+				messageHandle(k, message)
+			}
+		}(pc)
 	}
 }
 
-func trigger(f *KafkaRunner, b *[]byte) {
-	fmt.Println("url %v, byte %v", f.UpstreamURL, *b)
-	resp, err := http.Post(f.UpstreamURL, "text/plain", bytes.NewReader(*b))
+func messageHandle(k *KafkaRunner, message *sarama.ConsumerMessage) {
+	fmt.Printf("[#%d] Received on [%v,%v]: '%s'\n",
+		message.Offset,
+		message.Topic,
+		message.Partition,
+		string(message.Value))
+
+	resp, err := http.Post(k.Cfg.UpstreamURL, "text/plain", bytes.NewReader(message.Value))
 	if err != nil {
 		fmt.Println("http post err", err)
 	}
@@ -189,4 +204,26 @@ func trigger(f *KafkaRunner, b *[]byte) {
 	}
 
 	fmt.Println(string(body))
+
+	messageSend(k, body)
+}
+
+func messageSend(k *KafkaRunner, value []byte) {
+	if k.NoProducer {
+		return
+	}
+
+	msg := &sarama.ProducerMessage{
+		Topic:     k.Cfg.Topics[1],
+		Partition: -1,
+		Value:     sarama.ByteEncoder(value),
+	}
+
+	partition, offset, err := k.Producer.SendMessage(msg)
+	if err != nil {
+		fmt.Println("%s error occured.", err.Error())
+	} else {
+		fmt.Println("message was sent t partion %d offset is %d",
+			partition, offset)
+	}
 }
