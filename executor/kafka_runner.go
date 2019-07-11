@@ -52,7 +52,7 @@ func buildkafkaRunnerCfg() *KafkaRunnerCfg {
 	if val, exists := os.LookupEnv("topics"); exists {
 		for _, topic := range strings.Split(val, ",") {
 			if len(topic) > 0 {
-				topics = append(topics, topic)
+				topics = append(topics, strings.TrimSpace(topic))
 			}
 		}
 	}
