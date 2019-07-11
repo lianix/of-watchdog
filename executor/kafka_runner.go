@@ -46,7 +46,7 @@ func buildkafkaRunnerCfg() *KafkaRunnerCfg {
 		broker = val
 	}
 	brokers := []string{broker + ":9092"}
-	fmt.Println("brokers %v", brokers)
+	fmt.Println("brokers", brokers)
 
 	topics := []string{}
 	if val, exists := os.LookupEnv("topics"); exists {
@@ -59,13 +59,13 @@ func buildkafkaRunnerCfg() *KafkaRunnerCfg {
 	if len(topics) == 0 {
 		fmt.Println("please provide topics")
 	}
-	fmt.Println("topics %v", topics)
+	fmt.Println("topics", topics)
 
 	var upstreamURL string
 	if val, exists := os.LookupEnv("upstream_url"); exists {
 		upstreamURL = val
 	}
-	fmt.Println("upstreamURL:  %v", upstreamURL)
+	fmt.Println("upstreamURL:", upstreamURL)
 	//	gatewayURL := "http://gateway:8080"
 	//	if val, exists := os.LookupEnv("gateway_url"); exists {
 	//		gatewayURL = val
@@ -126,7 +126,7 @@ func makeKafkaClient(k *KafkaRunner) error {
 		if client != nil {
 			client.Close()
 		}
-		fmt.Println("wait for brokers (%s) to come up", k.Cfg.Brokers[0])
+		fmt.Println("wait for brokers:", k.Cfg.Brokers[0])
 
 		time.Sleep(1 * time.Second)
 	}
@@ -168,13 +168,13 @@ func listenKafka(k *KafkaRunner) {
 	topic := k.Cfg.Topics[0]
 	consumer := k.Consumer
 
-	fmt.Println("Polling topic: %s", topic)
+	fmt.Println("Polling topic:", topic)
 	partitionList, err := consumer.Partitions(topic) //get all partitions on the given topic
 	if err != nil {
 		fmt.Println("Error retrieving partitionList ", err)
 	}
 
-	fmt.Println("partitionList %v", partitionList)
+	fmt.Println("partitionList", partitionList)
 
 	initialOffset := sarama.OffsetNewest //OfffsetOldest
 	for _, partition := range partitionList {
@@ -225,10 +225,10 @@ func messageSend(k *KafkaRunner, value []byte) {
 
 	partition, offset, err := k.Producer.SendMessage(msg)
 	if err != nil {
-		fmt.Println("Could not send message to Topic %s", topic)
-		fmt.Println("Error: %s", err.Error())
+		fmt.Println("Could not send message to Topic", topic)
+		fmt.Println("Error:", err.Error())
 	} else {
-		fmt.Println("message was sent to partion %d offset is %d",
-			partition, offset)
+		fmt.Printf("message was sent to topic %s partion %d offset is %d\n",
+			topic, partition, offset)
 	}
 }
