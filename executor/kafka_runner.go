@@ -2,7 +2,6 @@ package executor
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -16,7 +15,7 @@ import (
 // HTTPFunctionRunner creates and maintains one process responsible for handling all calls
 type KafkaRunnerCfg struct {
 	UpstreamURL string
-	Topics      []string
+	Topics      [][2]string
 	Brokers     []string
 }
 
@@ -31,10 +30,14 @@ func KafkaRun() {
 	var k *KafkaRunner = new(KafkaRunner)
 
 	k.Cfg = buildkafkaRunnerCfg()
-
+	if k.Cfg == nil {
+		fmt.Println("Failed to create CFG")
+		return
+	}
 	err := makeKafkaClient(k)
 	if err != nil {
 		fmt.Println("Failed to create client")
+		return
 	}
 
 	listenKafka(k)
@@ -48,16 +51,30 @@ func buildkafkaRunnerCfg() *KafkaRunnerCfg {
 	brokers := []string{broker + ":9092"}
 	fmt.Println("brokers", brokers)
 
-	topics := []string{}
+	topics := [][2]string{}
 	if val, exists := os.LookupEnv("topics"); exists {
-		for _, topic := range strings.Split(val, ",") {
-			if len(topic) > 0 {
-				topics = append(topics, strings.TrimSpace(topic))
+		for _, topicsGroup := range strings.Split(val, ";") {
+			topicsGroup = strings.TrimSpace(topicsGroup)
+			fmt.Println(topicsGroup)
+			var tmp [2]string
+			tmp2 := strings.Split(topicsGroup, ",")
+			switch len(tmp) {
+			case 2:
+				tmp[0] = strings.TrimSpace(tmp2[0])
+				tmp[1] = strings.TrimSpace(tmp2[1])
+				topics = append(topics, tmp)
+			case 1:
+				tmp[0] = strings.TrimSpace(tmp2[0])
+				tmp[1] = ""
+				topics = append(topics, tmp)
+			default:
+				fmt.Println("please provide rx,[tx] topics")
 			}
 		}
 	}
 	if len(topics) == 0 {
 		fmt.Println("please provide topics")
+		return nil
 	}
 	fmt.Println("topics", topics)
 
@@ -131,14 +148,14 @@ func makeKafkaClient(k *KafkaRunner) error {
 		time.Sleep(1 * time.Second)
 	}
 
-	len := len(k.Cfg.Topics)
-	if len == 0 {
-		return errors.New("No Topic")
-	} else if len == 1 {
-		k.NoProducer = true
-	} else {
-		k.NoProducer = false
-	}
+	//	len := len(k.Cfg.Topics)
+	//	if len == 0 {
+	//		return errors.New("No Topic")
+	//	} else if len == 1 {
+	//		k.NoProducer = true
+	//	} else {
+	//		k.NoProducer = false
+	//	}
 
 	// setup consumer
 	k.Consumer, err = sarama.NewConsumer(k.Cfg.Brokers, nil)
@@ -147,9 +164,10 @@ func makeKafkaClient(k *KafkaRunner) error {
 		return err
 	}
 
-	if k.NoProducer {
-		return nil
-	}
+	//	if k.NoProducer {
+	//		return nil
+	//	}
+
 	// setup producer
 	config := sarama.NewConfig()
 	config.Producer.Partitioner = sarama.NewRandomPartitioner
@@ -165,30 +183,36 @@ func makeKafkaClient(k *KafkaRunner) error {
 }
 
 func listenKafka(k *KafkaRunner) {
-	topic := k.Cfg.Topics[0]
-	consumer := k.Consumer
 
-	fmt.Println("Polling topic:", topic)
-	partitionList, err := consumer.Partitions(topic) //get all partitions on the given topic
-	if err != nil {
-		fmt.Println("Error retrieving partitionList ", err)
-	}
+	for _, topicsGroup := range k.Cfg.Topics {
+		rx := topicsGroup[0]
+		tx := topicsGroup[1]
+		consumer := k.Consumer
 
-	fmt.Println("partitionList", partitionList)
+		fmt.Println("Polling topic:", rx)
 
-	initialOffset := sarama.OffsetNewest //OfffsetOldest
-	for _, partition := range partitionList {
-		pc, _ := consumer.ConsumePartition(topic, partition, initialOffset)
+		//get all partitions on the given topic
+		partitionList, err := consumer.Partitions(rx)
+		if err != nil {
+			fmt.Println("Error retrieving partitionList ", err)
+		}
 
-		go func(pc sarama.PartitionConsumer) {
-			for message := range pc.Messages() {
-				messageHandle(k, message)
-			}
-		}(pc)
+		fmt.Println("partitionList", partitionList)
+
+		initialOffset := sarama.OffsetNewest //OfffsetOldest
+		for _, partition := range partitionList {
+			pc, _ := consumer.ConsumePartition(rx, partition, initialOffset)
+
+			go func(pc sarama.PartitionConsumer) {
+				for message := range pc.Messages() {
+					messageHandle(k, tx, message)
+				}
+			}(pc)
+		}
 	}
 }
 
-func messageHandle(k *KafkaRunner, message *sarama.ConsumerMessage) {
+func messageHandle(k *KafkaRunner, tx string, message *sarama.ConsumerMessage) {
 	fmt.Printf("[#%d] Received on [%v,%v]: '%s'\n",
 		message.Offset,
 		message.Topic,
@@ -206,29 +230,26 @@ func messageHandle(k *KafkaRunner, message *sarama.ConsumerMessage) {
 		fmt.Println("io read error")
 	}
 
-	fmt.Println(string(body))
+	fmt.Println("response:", string(body))
 
-	messageSend(k, body)
+	if tx != "" {
+		messageSend(k, tx, body)
+	}
 }
 
-func messageSend(k *KafkaRunner, value []byte) {
-	if k.NoProducer {
-		return
-	}
-
-	topic := k.Cfg.Topics[1]
+func messageSend(k *KafkaRunner, tx string, value []byte) {
 	msg := &sarama.ProducerMessage{
-		Topic:     topic,
+		Topic:     tx,
 		Partition: -1,
 		Value:     sarama.ByteEncoder(value),
 	}
 
 	partition, offset, err := k.Producer.SendMessage(msg)
 	if err != nil {
-		fmt.Println("Could not send message to Topic", topic)
+		fmt.Println("Could not send message to Topic", tx)
 		fmt.Println("Error:", err.Error())
 	} else {
 		fmt.Printf("message was sent to topic %s partion %d offset is %d\n",
-			topic, partition, offset)
+			tx, partition, offset)
 	}
 }
