@@ -189,15 +189,13 @@ func listenKafka(k *KafkaRunner) {
 		tx := topicsGroup[1]
 		consumer := k.Consumer
 
-		fmt.Println("Polling topic:", rx)
+		fmt.Println("listen to topic:", rx)
 
 		//get all partitions on the given topic
 		partitionList, err := consumer.Partitions(rx)
 		if err != nil {
 			fmt.Println("Error retrieving partitionList ", err)
 		}
-
-		fmt.Println("partitionList", partitionList)
 
 		initialOffset := sarama.OffsetNewest //OfffsetOldest
 		for _, partition := range partitionList {

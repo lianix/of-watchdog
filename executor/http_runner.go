@@ -40,7 +40,6 @@ func (f *HTTPFunctionRunner) Start() error {
 	var stdinErr error
 	var stdoutErr error
 
-	fmt.Println("cmd:  ", cmd)
 	f.Command = cmd
 	f.StdinPipe, stdinErr = cmd.StdinPipe()
 	if stdinErr != nil {
@@ -105,12 +104,10 @@ func (f *HTTPFunctionRunner) Run(req FunctionRequest, contentLength int64, r *ht
 
 	upstreamURL := f.UpstreamURL.String()
 
-	fmt.Println("@@@@@@@@@@@@@@@@@@@22http run time %v", startedTime)
-
 	if len(r.RequestURI) > 0 {
 		upstreamURL += r.RequestURI
 	}
-	fmt.Println("@@@ url %s", upstreamURL)
+
 	var body io.Reader
 	if f.BufferHTTPBody {
 		reqBody, _ := ioutil.ReadAll(r.Body)
@@ -118,8 +115,6 @@ func (f *HTTPFunctionRunner) Run(req FunctionRequest, contentLength int64, r *ht
 	} else {
 		body = r.Body
 	}
-
-	fmt.Println("body: %s", body)
 
 	request, _ := http.NewRequest(r.Method, upstreamURL, body)
 	for h := range r.Header {
@@ -191,8 +186,6 @@ func (f *HTTPFunctionRunner) Run(req FunctionRequest, contentLength int64, r *ht
 		}
 		w.Write(bodyBytes)
 	}
-
-	fmt.Println("%s %s - %s - ContentLength: %d", r.Method, r.RequestURI, res.Status, res.ContentLength)
 
 	log.Printf("%s %s - %s - ContentLength: %d", r.Method, r.RequestURI, res.Status, res.ContentLength)
 
