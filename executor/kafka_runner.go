@@ -191,6 +191,16 @@ func listenKafka(k *KafkaRunner) {
 
 		fmt.Println("listen to topic:", rx)
 
+		if rx == "" {
+			go func() {
+				messageHandle(k, tx, []byte{})
+				time.Sleep(time.Duration(500) *
+					time.Microsecond)
+			}()
+
+			continue
+		}
+
 		//get all partitions on the given topic
 		partitionList, err := consumer.Partitions(rx)
 		if err != nil {
@@ -203,21 +213,22 @@ func listenKafka(k *KafkaRunner) {
 
 			go func(pc sarama.PartitionConsumer) {
 				for message := range pc.Messages() {
-					messageHandle(k, tx, message)
+					fmt.Printf("[#%d] Received on",
+						" [%v,%v]: '%s'\n",
+						message.Offset,
+						message.Topic,
+						message.Partition,
+						string(message.Value))
+					messageHandle(k, tx, message.Value)
 				}
 			}(pc)
 		}
 	}
 }
 
-func messageHandle(k *KafkaRunner, tx string, message *sarama.ConsumerMessage) {
-	fmt.Printf("[#%d] Received on [%v,%v]: '%s'\n",
-		message.Offset,
-		message.Topic,
-		message.Partition,
-		string(message.Value))
+func messageHandle(k *KafkaRunner, tx string, value []byte) {
 
-	resp, err := http.Post(k.Cfg.UpstreamURL, "text/plain", bytes.NewReader(message.Value))
+	resp, err := http.Post(k.Cfg.UpstreamURL, "text/plain", bytes.NewReader(value))
 	if err != nil {
 		fmt.Println("http post err", err)
 	}
