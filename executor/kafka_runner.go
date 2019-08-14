@@ -193,9 +193,12 @@ func listenKafka(k *KafkaRunner) {
 
 		if rx == "" {
 			go func() {
-				messageHandle(k, tx, []byte{})
-				time.Sleep(time.Duration(500) *
-					time.Microsecond)
+				b := []byte("hello")
+				for {
+					time.Sleep(
+						time.Duration(1000) * time.Millisecond)
+					messageHandle(k, tx, b)
+				}
 			}()
 
 			continue
@@ -213,8 +216,8 @@ func listenKafka(k *KafkaRunner) {
 
 			go func(pc sarama.PartitionConsumer) {
 				for message := range pc.Messages() {
-					fmt.Printf("[#%d] Received on",
-						" [%v,%v]: '%s'\n",
+					fmt.Printf(
+						"[#%d] Received on [%v,%v]: '%s'\n",
 						message.Offset,
 						message.Topic,
 						message.Partition,
@@ -227,10 +230,10 @@ func listenKafka(k *KafkaRunner) {
 }
 
 func messageHandle(k *KafkaRunner, tx string, value []byte) {
-
 	resp, err := http.Post(k.Cfg.UpstreamURL, "text/plain", bytes.NewReader(value))
 	if err != nil {
 		fmt.Println("http post err", err)
+		return
 	}
 	defer resp.Body.Close()
 
