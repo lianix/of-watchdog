@@ -58,7 +58,7 @@ func buildkafkaRunnerCfg() *KafkaRunnerCfg {
 			fmt.Println(topicsGroup)
 			var tmp [2]string
 			tmp2 := strings.Split(topicsGroup, ",")
-			switch len(tmp) {
+			switch len(tmp2) {
 			case 2:
 				tmp[0] = strings.TrimSpace(tmp2[0])
 				tmp[1] = strings.TrimSpace(tmp2[1])
@@ -183,7 +183,6 @@ func makeKafkaClient(k *KafkaRunner) error {
 }
 
 func listenKafka(k *KafkaRunner) {
-
 	for _, topicsGroup := range k.Cfg.Topics {
 		rx := topicsGroup[0]
 		tx := topicsGroup[1]
@@ -212,8 +211,12 @@ func listenKafka(k *KafkaRunner) {
 
 		initialOffset := sarama.OffsetNewest //OfffsetOldest
 		for _, partition := range partitionList {
-			pc, _ := consumer.ConsumePartition(rx, partition, initialOffset)
-
+			pc, err := consumer.ConsumePartition(rx, partition, initialOffset)
+			if err != nil {
+				fmt.Printf("Failed to start Consumer for partition %d: %s",
+					partition, err)
+				continue
+			}
 			go func(pc sarama.PartitionConsumer) {
 				for message := range pc.Messages() {
 					fmt.Printf(
